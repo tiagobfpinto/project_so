@@ -130,7 +130,7 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE],const char *output
     }
   }
   if (aux) {
-    strcat(output,"]\n");
+    strcat(output,"]");
   }
   printf("%s", output); 
   if(output_file != NULL){
@@ -140,10 +140,14 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE],const char *output
   return 0;
 }
 
-void kvs_show() {
+void kvs_show(const char *output_file) {
+  char temp[MAX_STRING_SIZE];
   for (int i = 0; i < TABLE_SIZE; i++) {
     KeyNode *keyNode = kvs_table->table[i];
     while (keyNode != NULL) {
+      snprintf(temp,sizeof(temp),"(%s, %s)", keyNode->key, keyNode->value);
+     
+      if(output_file != NULL){ write_to_file(output_file,temp);}
       printf("(%s, %s)\n", keyNode->key, keyNode->value);
       
       keyNode = keyNode->next; // Move to the next node

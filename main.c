@@ -95,7 +95,7 @@ void process_job_file(const char *job_file,const char *output_file) {
 
             case CMD_SHOW:
                 
-                kvs_show();
+                kvs_show(output_file);
                 break;
 
             case CMD_WAIT:
@@ -104,7 +104,7 @@ void process_job_file(const char *job_file,const char *output_file) {
                     fprintf(stderr, "Invalid WAIT command in file: %s\n", job_file);
                     continue;
                 }
-                printf("Waiting for %u ms.\n", delay);
+                printf("\nWaiting for %u ms.\n", delay);
                 kvs_wait(delay);
                 break;
 
@@ -248,7 +248,7 @@ int main(int argc, char *argv[]) {
                 break;
 
             case CMD_SHOW:
-                kvs_show();
+                kvs_show(NULL);
                 break;
 
             case CMD_WAIT:

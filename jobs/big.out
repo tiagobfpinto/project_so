@@ -1,7 +1,3 @@
-[(c1,KVSERROR)]
-[(chave2,valor-exemplo)]
-[(chaveAleatoria,KVSMISSING)]
-(chave2, valor-exemplo2)
 (key200, value200)
 (key199, value199)
 (key198, value198)
@@ -202,4 +198,3 @@
 (key3, value3)
 (key2, value2)
 (key1, value1)
-(umaChave, umValor)
