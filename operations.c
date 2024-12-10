@@ -18,18 +18,16 @@ static struct timespec delay_to_timespec(unsigned int delay_ms) {
   return (struct timespec){delay_ms / 1000, (delay_ms % 1000) * 1000000};
 }
 
-int write_to_file(const char *output_file, char output[MAX_STRING_SIZE], int newline){
+
+int write_to_file(const char *output_file, char output[MAX_STRING_SIZE]){
   int fd = open(output_file, O_WRONLY | O_APPEND | O_CREAT, 0644);
       if (fd == -1) {
         perror("Failed to open output file");
         return 0;
     }
-      if(newline ==2){
-    
-        write(fd,"\n",1);
-        }
+     
       write(fd, output, strlen(output));
-      if(newline ==1){write(fd,"\n",1);}
+      write(fd,"\n",1);
       
       
       close(fd);
@@ -116,7 +114,7 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], const char *output_
     strcat(read_output, "]"); // Close the JSON-like format
 
     if(output_file != NULL ){ //file input mode
-      write_to_file(output_file,read_output,1);
+      write_to_file(output_file,read_output);
       
     }
   
@@ -153,31 +151,26 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE],const char *output
     strcat(output,"]");
   }
   printf("%s", output); 
-  if(output_file != NULL){
-    write_to_file(output_file,output,1);
-  }
+  
+  if (output_file != NULL && strlen(output) > 0) {
+    write_to_file(output_file, output);
+}
 
   return 0;
 }
 
 void kvs_show(const char *output_file) {
-  int new_line = 2;
-  int first_node = 1;
+
   char temp[MAX_STRING_SIZE];
   for (int i = 0; i < TABLE_SIZE; i++) {
     KeyNode *keyNode = kvs_table->table[i];
     while (keyNode != NULL) {
-      if(first_node){
-        first_node =0;
-        new_line =0;
-      }else{
-        new_line = 2;
-      }
+      
       snprintf(temp,sizeof(temp),"(%s, %s)", keyNode->key, keyNode->value);
      
 
 
-      if(output_file != NULL){ write_to_file(output_file,temp,new_line);}
+      if(output_file != NULL && strlen(temp)>0){ write_to_file(output_file,temp);}
       
 
       printf("(%s, %s)\n", keyNode->key, keyNode->value);
