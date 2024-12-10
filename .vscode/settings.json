@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "kvs.h": "c",
-        "stdint.h": "c"
+        "stdint.h": "c",
+        "string.h": "c"
     }
 }

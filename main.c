@@ -1,6 +1,4 @@
 #include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -14,8 +12,61 @@
 #include "parser.h"
 #include "operations.h"
 
+void process_job_file(const char *directory, const char *job_file);
 
-void process_job_file(const char *job_file,const char *output_file) {
+// Function to compare strings for sorting
+int compare(const void *a, const void *b) {
+    return strcmp(*(const char **)a, *(const char **)b);
+}
+
+// Function to collect `.job` files into a list and sort them
+char **collect_and_sort_jobs(const char *directory, size_t *file_count) {
+    DIR *dir = opendir(directory);
+    if (!dir) {
+        perror("Failed to open directory");
+        return NULL;
+    }
+
+    struct dirent *entry;
+    char **job_files = NULL; // Array of strings
+    size_t count = 0;
+
+    // Collect .job files
+    while ((entry = readdir(dir)) != NULL) {
+        if (strstr(entry->d_name, ".job")) {
+            job_files = realloc(job_files, (count + 1) * sizeof(char *));
+            if (!job_files) {
+                perror("Memory allocation failed");
+                closedir(dir);
+                return NULL;
+            }
+            job_files[count] = strdup(entry->d_name);
+            if (!job_files[count]) {
+                perror("Memory allocation failed");
+                closedir(dir);
+                return NULL;
+            }
+            count++;
+        }
+    }
+
+    closedir(dir);
+
+    // Sort the file names
+    qsort(job_files, count, sizeof(char *), compare);
+
+    *file_count = count;
+    return job_files;
+}
+void process_sorted_jobs(const char *directory, char **job_files, size_t file_count) {
+    for (size_t i = 0; i < file_count; i++) {
+        process_job_file(directory, job_files[i]);
+        free(job_files[i]); // Free the allocated file name
+    }
+
+    free(job_files); // Free the array of strings
+}
+void parse_job_file(const char *job_file,const char *output_file) {
 
     int fh;
     struct stat v;
@@ -149,6 +200,32 @@ void process_job_file(const char *job_file,const char *output_file) {
 
 }
 
+void process_job_file(const char *directory, const char *job_file) {
+    printf("Processing job file: %s\n", job_file);
+
+    char job_path[1024], out_path[1024];
+    snprintf(job_path, sizeof(job_path), "%s/%s", directory, job_file);
+
+    // Create .out file path
+    snprintf(out_path, sizeof(out_path), "%s/%s", directory, job_file);
+    char *dot = strrchr(out_path, '.');
+    if (dot != NULL) {
+        strcpy(dot, ".out"); // Replace ".job" with ".out"
+    } else {
+        strcat(out_path, ".out"); // Fallback if no extension found
+    }
+
+    // Create empty .out file
+    int fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd == -1) {
+        perror("Failed to create .out file");
+    } else {
+        close(fd); // Close the file immediately after creating it
+    }
+
+    // Process the job file
+    parse_job_file(job_path, out_path);
+}
 
 
 
@@ -172,36 +249,14 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Process all .job files in the directory
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (strstr(entry->d_name, ".job")) {
-            char job_path[1024], out_path[1024];
-            snprintf(job_path, sizeof(job_path), "%s/%s", directory, entry->d_name);
-
-            // Create .out file path
-            snprintf(out_path, sizeof(out_path), "%s/%s", directory, entry->d_name);
-            char *dot = strrchr(out_path, '.');
-            if (dot != NULL) {
-                strcpy(dot, ".out"); // Replace ".job" with ".out"
-            } else {
-                strcat(out_path, ".out"); // Fallback if no extension found
-            }
-
-            // Create empty .out file
-            int fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-            if (fd == -1) {
-                perror("Failed to create .out file");
-            } else {
-                close(fd); // Close the file immediately after creating it
-            }
-
-            // Process the .job file
-            process_job_file(job_path,out_path);
-        }
+   
+    size_t file_count = 0;
+    char **job_files = collect_and_sort_jobs(directory, &file_count);
+    if (!job_files) {
+        fprintf(stderr, "Failed to collect and sort job files\n");
+        return 1;
     }
-
-    closedir(dir);
+    process_sorted_jobs(directory, job_files, file_count);
 
     // Enter main command loop (standard input)
     while (1) {
