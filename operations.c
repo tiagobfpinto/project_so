@@ -17,28 +17,16 @@ static struct timespec delay_to_timespec(unsigned int delay_ms) {
   return (struct timespec){delay_ms / 1000, (delay_ms % 1000) * 1000000};
 }
 
-void write_to_file(const char *filename, const char *data) {
-    // Open the file
-    int fd = open(filename, O_WRONLY);
-    if (fd == -1) {
-        perror("Error opening file");
-        return;
+int write_to_file(const char *output_file, char output[MAX_STRING_SIZE]){
+  int fd = open(output_file, O_WRONLY | O_APPEND | O_CREAT, 0644);
+      if (fd == -1) {
+        perror("Failed to open output file");
+        return 0;
     }
-
-    // Write data to the file
-    ssize_t bytes_written = write(fd, data, strlen(data));
-    if (bytes_written == -1) {
-        perror("Error writing to file");
-        close(fd);
-        return;
-    }
-
-    printf("Wrote %ld bytes to %s\n", bytes_written, filename);
-
-    // Close the file
-    if (close(fd) == -1) {
-        perror("Error closing file");
-    }
+      write(fd, output, strlen(output));
+      write(fd,"\n",1);
+      close(fd);
+    return 1;
 }
 
 
@@ -77,44 +65,76 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_
   return 0;
 }
 
-int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
-  if (kvs_table == NULL) {
-    fprintf(stderr, "KVS state must be initialized\n");
-    return 1;
-  }
 
-  printf("[");
-  for (size_t i = 0; i < num_pairs; i++) {
-    char* result = read_pair(kvs_table, keys[i]);
-    if (result == NULL) {
-      printf("(%s,KVSERROR)", keys[i]);
-    } else {
-      printf("(%s,%s)", keys[i], result);
+
+int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], const char *output_file) {
+    if (kvs_table == NULL) {
+        fprintf(stderr, "KVS state must be initialized\n");
+        return 1;
     }
-    free(result);
-  }
-  printf("]\n");
-  return 0;
+
+
+    char read_output[MAX_STRING_SIZE] = "[";
+    
+
+    for (size_t i = 0; i < num_pairs; i++) {
+        char temp[MAX_STRING_SIZE];
+        char *result = read_pair(kvs_table, keys[i]);
+
+        if (result == NULL) {
+            snprintf(temp, sizeof(temp), "(%s,KVSERROR)", keys[i]);
+        } else {
+            snprintf(temp, sizeof(temp), "(%s,%s)", keys[i], result);
+            free(result);
+        }
+
+        strcat(read_output, temp);
+        if (i < num_pairs - 1) {
+            strcat(read_output, ","); // Add comma between pairs
+        }
+    }
+
+    strcat(read_output, "]"); // Close the JSON-like format
+
+    if(output_file != NULL ){ //file input mode
+      write_to_file(output_file,read_output);
+      
+    }
+  
+
+    printf("%s\n", read_output); // Print the output
+    return 0;
 }
 
-int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE]) {
+
+int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE],const char *output_file) {
   if (kvs_table == NULL) {
     fprintf(stderr, "KVS state must be initialized\n");
     return 1;
   }
   int aux = 0;
 
+  char output[MAX_STRING_SIZE] = "";
   for (size_t i = 0; i < num_pairs; i++) {
     if (delete_pair(kvs_table, keys[i]) != 0) {
       if (!aux) {
-        printf("[");
+        strcat(output,"[");
+        
         aux = 1;
       }
-      printf("(%s,KVSMISSING)", keys[i]);
+      char temp[MAX_STRING_SIZE];
+      
+      snprintf(temp,sizeof(temp),"(%s,KVSMISSING)", keys[i]);
+      strcat(output,temp);
+   
     }
   }
   if (aux) {
-    printf("]\n");
+    strcat(output,"]\n");
+  }
+  printf("%s", output); 
+  if(output_file != NULL){
+    write_to_file(output_file,output);
   }
 
   return 0;

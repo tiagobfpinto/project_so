@@ -15,7 +15,7 @@
 #include "operations.h"
 
 
-void process_job_file(const char *job_file) {
+void process_job_file(const char *job_file,const char *output_file) {
 
     int fh;
     struct stat v;
@@ -75,7 +75,7 @@ void process_job_file(const char *job_file) {
                     continue;
                 }
                
-                if (kvs_read(num_pairs, keys)) {
+                if (kvs_read(num_pairs, keys,output_file)) {
                     fprintf(stderr, "Failed to read keys in file: %s\n", job_file);
                 }
                 break;
@@ -88,7 +88,7 @@ void process_job_file(const char *job_file) {
                     continue;
                 }
                 
-                if (kvs_delete(num_pairs, keys)) {
+                if (kvs_delete(num_pairs, keys,output_file)) {
                     fprintf(stderr, "Failed to delete keys in file: %s\n", job_file);
                 }
                 break;
@@ -179,12 +179,25 @@ int main(int argc, char *argv[]) {
             char job_path[1024], out_path[1024];
             snprintf(job_path, sizeof(job_path), "%s/%s", directory, entry->d_name);
 
-            // Create corresponding output file name with .out extension
+            // Create .out file path
             snprintf(out_path, sizeof(out_path), "%s/%s", directory, entry->d_name);
-            strcpy(strrchr(out_path, '.'), ".out");
+            char *dot = strrchr(out_path, '.');
+            if (dot != NULL) {
+                strcpy(dot, ".out"); // Replace ".job" with ".out"
+            } else {
+                strcat(out_path, ".out"); // Fallback if no extension found
+            }
+
+            // Create empty .out file
+            int fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd == -1) {
+                perror("Failed to create .out file");
+            } else {
+                close(fd); // Close the file immediately after creating it
+            }
 
             // Process the .job file
-            process_job_file(job_path);
+            process_job_file(job_path,out_path);
         }
     }
 
@@ -218,7 +231,7 @@ int main(int argc, char *argv[]) {
                     fprintf(stderr, "Invalid command. See HELP for usage\n");
                     continue;
                 }
-                if (kvs_read(num_pairs, keys)) {
+                if (kvs_read(num_pairs, keys,NULL)) {
                     fprintf(stderr, "Failed to read pair\n");
                 }
                 break;
@@ -229,7 +242,7 @@ int main(int argc, char *argv[]) {
                     fprintf(stderr, "Invalid command. See HELP for usage\n");
                     continue;
                 }
-                if (kvs_delete(num_pairs, keys)) {
+                if (kvs_delete(num_pairs, keys,NULL)) { // parametro output file NULL porque estamos em modo de user input
                     fprintf(stderr, "Failed to delete pair\n");
                 }
                 break;
