@@ -135,8 +135,11 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE],const char *output
   }
   int aux = 0;
   
+   size_t buffer_size = num_pairs * (2 * MAX_STRING_SIZE + 5) + 3; 
+    char *output = malloc(buffer_size);
+   
+    strcpy(output, ""); 
 
-  char output[MAX_STRING_SIZE] = "";
   for (size_t i = 0; i < num_pairs; i++) {
     if (delete_pair(kvs_table, keys[i]) != 0) {
       if (!aux) {
@@ -158,7 +161,8 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE],const char *output
   
   if (output_file != NULL && strlen(output) > 0) {
     write_to_file(output_file, output);
-}
+  }
+  free(output);
 
   return 0;
 }
