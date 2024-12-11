@@ -1,5 +1,5 @@
 #include <stdio.h>
-
+#include <sys/wait.h> // ADDED for wait
 #include <stdlib.h>
 #include <time.h>
 #include <fcntl.h>
@@ -8,7 +8,11 @@
 #include "kvs.h"
 #include "constants.h"
 
+// Variáveis globais para controlar backups
+int max_backups = 0;
+int current_backups = 0;
 static struct HashTable* kvs_table = NULL;
+
 
 
 /// Calculates a timespec from a delay in milliseconds.
@@ -28,7 +32,6 @@ int write_to_file(const char *output_file, char output[MAX_STRING_SIZE]){
      
       write(fd, output, strlen(output));
       write(fd,"\n",1);
-      
       
       close(fd);
     return 1;
@@ -131,6 +134,7 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE],const char *output
     return 1;
   }
   int aux = 0;
+  
 
   char output[MAX_STRING_SIZE] = "";
   for (size_t i = 0; i < num_pairs; i++) {
@@ -159,6 +163,10 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE],const char *output
   return 0;
 }
 
+
+
+
+
 void kvs_show(const char *output_file) {
 
   char temp[MAX_STRING_SIZE];
@@ -171,10 +179,8 @@ void kvs_show(const char *output_file) {
 
 
       if(output_file != NULL && strlen(temp)>0){ write_to_file(output_file,temp);}
-      
 
       printf("(%s, %s)\n", keyNode->key, keyNode->value);
-
 
       keyNode = keyNode->next; // Move to the next node
       
@@ -185,7 +191,40 @@ void kvs_show(const char *output_file) {
  
 }
 
-int kvs_backup() {
+void kvs_wait_backup() {
+    // Wait until all backups have finished
+    while (current_backups > 0) {
+        printf(".\n");
+        wait(NULL);   // Wait for one backup to complete
+        current_backups--;
+    }
+}
+
+// ADDED: Função para efetuar o BACKUP
+// Recebe o nome do ficheiro .job (ex: input1.job) e um número do backup atual
+int kvs_backup(const char *output_file) {
+  //printf("output file of kvs backup-> %s\n",output_file);
+  // Caso haja backups no limite, aguardar que um termine
+  kvs_wait_backup();
+
+
+
+  pid_t pid = fork();
+  if (pid < 0) {
+    perror("Fork failed");
+    return 1;
+  }
+
+  if (pid == 0) {
+    // faz backup
+    kvs_show(output_file);
+    exit(0);
+  } else {
+    // Processo pai: incrementa o contador de backups correntes
+    current_backups++;
+    // Não espera aqui. Continua a executar
+  }
+
   return 0;
 }
 

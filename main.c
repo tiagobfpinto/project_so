@@ -7,10 +7,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-
+#include <sys/wait.h> // ADDED for wait
 #include "constants.h"
 #include "parser.h"
 #include "operations.h"
+
 
 void process_job_file(const char *directory, const char *job_file);
 
@@ -66,7 +67,68 @@ void process_sorted_jobs(const char *directory, char **job_files, size_t file_co
 
     free(job_files); // Free the array of strings
 }
-void parse_job_file(const char *job_file,const char *output_file) {
+
+int handleBackup(const char *directory, const char *job_file) {
+    //printf("NEED to create backup for: [%s] in directory [%s]\n", job_file, directory);
+
+    char job_path[1024], out_path[2048];
+    snprintf(job_path, sizeof(job_path), "%s/%s", directory, job_file);
+
+    // Extract just the filename (without directories)
+    const char *filename = strrchr(job_file, '/');
+    if (filename) {
+        filename++; // skip '/'
+    } else {
+        filename = job_file;
+    }
+
+    // Remove ".job" extension from filename if present, but keep the base name
+    char base_name[1024];
+    strncpy(base_name, filename, sizeof(base_name));
+    base_name[sizeof(base_name)-1] = '\0'; // safety null-termination
+
+    char *dot = strrchr(base_name, '.');
+    if (dot && strcmp(dot, ".job") == 0) {
+        *dot = '\0'; // remove ".job"
+    }
+
+    // Now we attempt to find a backup filename that doesn't exist yet
+    // Start from backup_count = 1
+    int backup_count = 1;
+    while (1) {
+        snprintf(out_path, sizeof(out_path), "%s/%s-%d.bck", directory, base_name, backup_count);
+        
+        // Check if file already exists
+        if (access(out_path, F_OK) == -1) {
+            // File does not exist, we can use this name
+            break;
+        }
+        // If file exists, increment backup_count and try again
+        backup_count++;
+    }
+
+    // Create empty .bck file
+    //printf("Creating backup file: %s\n", out_path);
+    int fd = open(out_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd == -1) {
+        perror("Failed to create .bck file");
+        return 1;
+    } else {
+        close(fd); // Close after creation
+    }
+
+    // Now call kvs_backup with the chosen output_file
+    if (kvs_backup(out_path) != 0) {
+        fprintf(stderr, "Failed to perform backup on file: %s\n", out_path);
+        return 1;
+    }
+
+    return 0;
+}
+
+
+
+void parse_job_file(const char *directory,const char *job_file,const char *output_file) {
 
     int fh;
     struct stat v;
@@ -98,6 +160,8 @@ void parse_job_file(const char *job_file,const char *output_file) {
     char values[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
     unsigned int delay;
     size_t num_pairs;
+
+
 
     while (1) {
         // Fetch the next command from the file
@@ -160,10 +224,11 @@ void parse_job_file(const char *job_file,const char *output_file) {
                 break;
 
             case CMD_BACKUP:
-                
-                if (kvs_backup()) {
+                if(handleBackup(directory,job_file)){
                     fprintf(stderr, "Failed to perform backup in file: %s\n", job_file);
                 }
+                
+            
                 break;
 
             case CMD_HELP:
@@ -224,19 +289,26 @@ void process_job_file(const char *directory, const char *job_file) {
     }
 
     // Process the job file
-    parse_job_file(job_path, out_path);
+    parse_job_file(directory,job_path, out_path);
+    
 }
+
 
 
 
 int main(int argc, char *argv[]) {
    
     if (argc != 4) {
-        fprintf(stderr, "Usage: %s <directory> <max backups><usermode>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <directory> <max backups><xxx>\n", argv[0]);
         return 1;
     }
+    
 
+   
     const char *directory = argv[1];
+    max_backups = atoi(argv[2]); // ADDED: guardar max_backups
+
+
     DIR *dir = opendir(directory); // abrir diretorio do parametro argv (jobs)
     if (!dir) {
         perror("Error opening directory");
@@ -258,6 +330,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     process_sorted_jobs(directory, job_files, file_count);
+
+     // Ao fim, aguardar todos os backups terminarem (opcional, mas recomendado)
+    while (current_backups > 0) {
+        wait(NULL);
+        current_backups--;
+    }
 
     return 0;
 }
