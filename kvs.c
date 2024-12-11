@@ -12,22 +12,6 @@ int table_size = TABLE_SIZE;
 // @return hash.
 // NOTE: This is not an ideal hash function, but is useful for test purposes of the project
 
-uint32_t fnv1a_hash(const char *key, size_t len) { // not used right now as we're using teacher's hashing for testing
-    uint32_t hash = 2166136261u; // FNV offset basis
-    const uint32_t fnv_prime = 16777619u;
-
-    for (size_t i = 0; i < len; i++) {
-        hash ^= (uint8_t)key[i];  // XOR with the current byte
-        hash *= fnv_prime;        // Multiply by the FNV prime
-    }
-
-    return hash;
-}
-
-int hash_better(const char *key) {
-    uint32_t hash_value = fnv1a_hash(key, strlen(key));
-    return (int)(hash_value % (uint32_t)table_size); // Fix type mismatch
-}
 
 int hash(const char *key) {
     int firstLetter = tolower(key[0]);

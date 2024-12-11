@@ -11,9 +11,18 @@
 #include "constants.h"
 #include "parser.h"
 #include "operations.h"
+#include <pthread.h>
 
+ const char *DIRECTORY;
 
-void process_job_file(const char *directory, const char *job_file);
+//parametro para as threads
+typedef struct thread_param_s {
+     // each thread irá receber an um job file
+     struct webData* data;
+  
+} thread_param_t;
+
+void process_job_file(const char *job_file);
 
 // Function to compare strings for sorting
 int compare(const void *a, const void *b) {
@@ -21,10 +30,10 @@ int compare(const void *a, const void *b) {
 }
 
 // Function to collect `.job` files into a list and sort them
-char **collect_and_sort_jobs(const char *directory, size_t *file_count) {
-    DIR *dir = opendir(directory);
+char **collect_and_sort_jobs(size_t *file_count) {
+    DIR *dir = opendir(DIRECTORY);
     if (!dir) {
-        perror("Failed to open directory");
+        perror("Failed to open DIRECTORY");
         return NULL;
     }
 
@@ -59,20 +68,21 @@ char **collect_and_sort_jobs(const char *directory, size_t *file_count) {
     *file_count = count;
     return job_files;
 }
-void process_sorted_jobs(const char *directory, char **job_files, size_t file_count) {
+void process_sorted_jobs(char **job_files, size_t file_count) {
     for (size_t i = 0; i < file_count; i++) {
-        process_job_file(directory, job_files[i]);
+        process_job_file(job_files[i]);
         free(job_files[i]); // Free the allocated file name
     }
 
     free(job_files); // Free the array of strings
 }
 
-int handleBackup(const char *directory, const char *job_file) {
-    //printf("NEED to create backup for: [%s] in directory [%s]\n", job_file, directory);
+int handleBackup(
+    const char *job_file) {
+    //printf("NEED to create backup for: [%s] in DIRECTORY [%s]\n", job_file, DIRECTORY);
 
     char job_path[1024], out_path[2048];
-    snprintf(job_path, sizeof(job_path), "%s/%s", directory, job_file);
+    snprintf(job_path, sizeof(job_path), "%s/%s", DIRECTORY, job_file);
 
     // Extract just the filename (without directories)
     const char *filename = strrchr(job_file, '/');
@@ -96,7 +106,7 @@ int handleBackup(const char *directory, const char *job_file) {
     // Start from backup_count = 1
     int backup_count = 1;
     while (1) {
-        snprintf(out_path, sizeof(out_path), "%s/%s-%d.bck", directory, base_name, backup_count);
+        snprintf(out_path, sizeof(out_path), "%s/%s-%d.bck", DIRECTORY, base_name, backup_count);
         
         // Check if file already exists
         if (access(out_path, F_OK) == -1) {
@@ -128,7 +138,7 @@ int handleBackup(const char *directory, const char *job_file) {
 
 
 
-void parse_job_file(const char *directory,const char *job_file,const char *output_file) {
+void parse_job_file(const char *job_file,const char *output_file) {
 
     int fh;
     struct stat v;
@@ -224,7 +234,7 @@ void parse_job_file(const char *directory,const char *job_file,const char *outpu
                 break;
 
             case CMD_BACKUP:
-                if(handleBackup(directory,job_file)){
+                if(handleBackup(job_file)){
                     fprintf(stderr, "Failed to perform backup in file: %s\n", job_file);
                 }
                 
@@ -265,14 +275,14 @@ void parse_job_file(const char *directory,const char *job_file,const char *outpu
 
 }
 
-void process_job_file(const char *directory, const char *job_file) {
+void process_job_file(const char *job_file) {
     printf("Processing job file: %s\n", job_file);
 
     char job_path[1024], out_path[1024];
-    snprintf(job_path, sizeof(job_path), "%s/%s", directory, job_file);
+    snprintf(job_path, sizeof(job_path), "%s/%s", DIRECTORY, job_file);
 
     // Create .out file path
-    snprintf(out_path, sizeof(out_path), "%s/%s", directory, job_file);
+    snprintf(out_path, sizeof(out_path), "%s/%s", DIRECTORY, job_file);
     char *dot = strrchr(out_path, '.');
     if (dot != NULL) {
         strcpy(dot, ".out"); // Replace ".job" with ".out"
@@ -289,7 +299,7 @@ void process_job_file(const char *directory, const char *job_file) {
     }
 
     // Process the job file
-    parse_job_file(directory,job_path, out_path);
+    parse_job_file(job_path, out_path);
     
 }
 
@@ -299,19 +309,19 @@ void process_job_file(const char *directory, const char *job_file) {
 int main(int argc, char *argv[]) {
    
     if (argc != 4) {
-        fprintf(stderr, "Usage: %s <directory> <max backups><xxx>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <DIRECTORY> <max backups><xxx>\n", argv[0]);
         return 1;
     }
     
 
    
-    const char *directory = argv[1];
+    DIRECTORY = argv[1];
     max_backups = atoi(argv[2]); // ADDED: guardar max_backups
 
 
-    DIR *dir = opendir(directory); // abrir diretorio do parametro argv (jobs)
+    DIR *dir = opendir(DIRECTORY); // abrir diretorio do parametro argv (jobs)
     if (!dir) {
-        perror("Error opening directory");
+        perror("Error opening DIRECTORY");
         return 1;
     }
 
@@ -324,12 +334,12 @@ int main(int argc, char *argv[]) {
 
    
     size_t file_count = 0;
-    char **job_files = collect_and_sort_jobs(directory, &file_count);
+    char **job_files = collect_and_sort_jobs(&file_count);
     if (!job_files) {
         fprintf(stderr, "Failed to collect and sort job files\n");
         return 1;
     }
-    process_sorted_jobs(directory, job_files, file_count);
+    process_sorted_jobs(job_files, file_count);
 
      // Ao fim, aguardar todos os backups terminarem (opcional, mas recomendado)
     while (current_backups > 0) {

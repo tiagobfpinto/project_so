@@ -8,6 +8,7 @@
 #include "kvs.h"
 #include "constants.h"
 
+
 // Variáveis globais para controlar backups
 int max_backups = 0;
 int current_backups = 0;
