@@ -7,40 +7,86 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/wait.h> // ADDED for wait
 #include "constants.h"
 #include "parser.h"
+#include <sys/wait.h> // For wait
 #include "operations.h"
 #include <pthread.h>
 
-void process_job_file(const char *job_file);
 const char *DIRECTORY;
 
-//parametro para as threads
-typedef struct thread_param_s {
-     // each thread irá receber an um job file
-    const char *job_file; //nome do job file
-  
-} thread_param_t;
+static char **queue = NULL; // Pointer to the queue
+static int queueSize = 0;   // Number of elements in the queue
 
-void *thread(void *param) {
-    thread_param_t *thread_param = (thread_param_t*)param;
-    char *job = (char *)thread_param->job_file; // cast to non-const for free
+// Mutex for queue operations
+static pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+void process_job_file(const char *job_file);
+
+void enqueue(char *element) {
+    pthread_mutex_lock(&queue_mutex);
+    char **temp = realloc(queue, (size_t)(queueSize + 1) * sizeof(char *));
+    if (!temp) {
+        perror("Memory allocation failed for queue");
+        pthread_mutex_unlock(&queue_mutex);
+        exit(1);
+    }
+    queue = temp;
+    queue[queueSize++] = element;
+    pthread_mutex_unlock(&queue_mutex);
+}
+
+char *dequeue() {
+    pthread_mutex_lock(&queue_mutex);
+    if (queueSize == 0) {
+        pthread_mutex_unlock(&queue_mutex);
+        return NULL;
+    }
+
+    char *firstElement = queue[0];
+
+    // Shift pointers to the left
+    for (int i = 1; i < queueSize; i++) {
+        queue[i - 1] = queue[i];
+    }
+
+    queueSize--;
+
+    char **temp = realloc(queue, (size_t)queueSize * sizeof(char *));
+    if (queueSize > 0 && !temp) {
+        perror("Memory reallocation failed for queue");
+        pthread_mutex_unlock(&queue_mutex);
+        exit(1);
+    }
+    queue = temp;
+    pthread_mutex_unlock(&queue_mutex);
+
+    return firstElement;
+}
+
+void freeQueue() {
+    pthread_mutex_lock(&queue_mutex);
+    for (int i = 0; i < queueSize; i++) {
+        free(queue[i]); // Free each string in the queue
+    }
+    free(queue); // Free the queue itself
+    queue = NULL;
+    queueSize = 0;
+    pthread_mutex_unlock(&queue_mutex);
+}
+
+void *thread_mission(void *arg) {
+    (void)arg; // unused
+    char *job = dequeue();
+    if (job == NULL) {
+        return NULL;
+    }
     process_job_file(job);
-
-    free(job);          // Now free the job file string
-    free(thread_param); // and the param structure
+    free(job);
     return NULL;
 }
 
-
-// Function to compare strings for sorting
-int compare(const void *a, const void *b) {
-    return strcmp(*(const char **)a, *(const char **)b);
-}
-
-char **collect_and_sort_jobs(size_t *file_count) {
+char **collect_jobs(size_t *file_count) {
     DIR *dir = opendir(DIRECTORY);
     if (!dir) {
         perror("Failed to open DIRECTORY");
@@ -53,11 +99,9 @@ char **collect_and_sort_jobs(size_t *file_count) {
 
     while ((entry = readdir(dir)) != NULL) {
         if (strstr(entry->d_name, ".job")) {
-            // Use a temp pointer for realloc to avoid losing the original if it fails
             char **temp = realloc(job_files, (count + 1) * sizeof(char *));
             if (!temp) {
                 perror("Memory allocation failed");
-                // Free previously allocated strings
                 for (size_t i = 0; i < count; i++) {
                     free(job_files[i]);
                 }
@@ -70,7 +114,6 @@ char **collect_and_sort_jobs(size_t *file_count) {
             job_files[count] = strdup(entry->d_name);
             if (!job_files[count]) {
                 perror("Memory allocation failed");
-                // Free all previously allocated strings before returning
                 for (size_t i = 0; i < count; i++) {
                     free(job_files[i]);
                 }
@@ -83,62 +126,38 @@ char **collect_and_sort_jobs(size_t *file_count) {
     }
 
     closedir(dir);
-
-    // If we have files, sort them
-    if (count > 0) {
-        qsort(job_files, count, sizeof(char *), compare);
-    }
-
+  
     *file_count = count;
     return job_files;
 }
 
-
-void process_sorted_jobs(char **job_files, size_t file_count, int MAX_THREADS) {
-    pthread_t tid_array[MAX_THREADS];
-    size_t files_processed = 0;
-
-    while (files_processed < file_count) {
-        int active_threads = 0;
-
-        for (int i = 0; i < MAX_THREADS && files_processed < file_count; i++) {
-            thread_param_t *param = malloc(sizeof(thread_param_t));
-            if (!param) {
-                perror("Failed to allocate memory for thread parameter");
-                exit(EXIT_FAILURE);
-            }
-
-            // Transfer ownership of the string to the thread
-            param->job_file = job_files[files_processed];
-            job_files[files_processed] = NULL;  // so we don't free it again in main
-            files_processed++;
-
-            if (pthread_create(&tid_array[active_threads], NULL, thread, param) != 0) {
-                perror("Failed to create thread");
-                free(param); // If creation fails, free param
-                continue;
-            }
-
-            active_threads++;
-        }
-
-        for (int i = 0; i < active_threads; i++) {
-            pthread_join(tid_array[i], NULL);
-        }
-    }
-
-    // Free the array of pointers (some may be NULL if freed by threads)
-    for (size_t i = 0; i < file_count; i++) {
-        // Only free if not already freed by thread
-        if (job_files[i]) {
-            free(job_files[i]);
-        }
-    }
-    free(job_files);
+// Function to compare strings for sorting
+int compare(const void *a, const void *b) {
+    return strcmp(*(const char **)a, *(const char **)b);
 }
 
-int handleBackup(
-    const char *job_file) {
+
+
+void process_queue(int MAX_THREADS) {
+    pthread_t tid_array[MAX_THREADS];
+
+    // Create up to MAX_THREADS threads
+    for (int i = 0; i < MAX_THREADS; i++) {
+        if (pthread_create(&tid_array[i], NULL, thread_mission, NULL) != 0) {
+            perror("Failed to create thread");
+            // If failed, no thread to join at this index
+            continue;
+        }
+    }
+
+    // Join all threads
+    for (int i = 0; i < MAX_THREADS; i++) {
+        pthread_join(tid_array[i], NULL);
+    }
+}
+
+
+int handleBackup(const char *job_file) {
     //printf("NEED to create backup for: [%s] in DIRECTORY [%s]\n", job_file, DIRECTORY);
 
     char job_path[1024], out_path[2048];
@@ -367,49 +386,57 @@ void process_job_file(const char *job_file) {
 
 
 int main(int argc, char *argv[]) {
-   
     if (argc != 4) {
-        fprintf(stderr, "Usage: %s <DIRECTORY> <max backups><xxx>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <DIRECTORY> <max backups> <max threads>\n", argv[0]);
         return 1;
     }
-    
 
-   
     DIRECTORY = argv[1];
-    max_backups = atoi(argv[2]); // ADDED: guardar max_backups
-    int MAX_THREADS = atoi(argv[3]); // guardar max threads
+    max_backups = atoi(argv[2]);
+    int MAX_THREADS = atoi(argv[3]);
 
-    DIR *dir = opendir(DIRECTORY); // abrir diretorio do parametro argv (jobs)
+    DIR *dir = opendir(DIRECTORY);
     if (!dir) {
         perror("Error opening DIRECTORY");
         return 1;
     }
 
-    // Initialize KVS
     if (kvs_init()) {
         fprintf(stderr, "Failed to initialize KVS\n");
         closedir(dir);
         return 1;
     }
-    closedir(dir); // Close the directory after done
+    closedir(dir);
 
-   
     size_t file_count = 0;
-    char **job_files = collect_and_sort_jobs(&file_count);
-    if (!job_files) {
-        fprintf(stderr, "Failed to collect and sort job files\n");
+    char **jobs = collect_jobs(&file_count);
+    if (!jobs) {
+        fprintf(stderr, "Failed to fill the queue with jobs\n");
+        // If collect_jobs() returned NULL, no jobs were allocated, so no leak here.
+        kvs_terminate();
         return 1;
     }
 
+    // Enqueue all collected jobs
+    for (size_t i = 0; i < file_count; i++) {
+        enqueue(jobs[i]);
+    }
+    // Free the jobs array of pointers now that they've been enqueued
+    free(jobs);
 
-    process_sorted_jobs(job_files, file_count,MAX_THREADS);
+    // Process queue with MAX_THREADS threads
+    process_queue(MAX_THREADS);
 
-     // Ao fim, aguardar todos os backups terminarem (opcional, mas recomendado)
+    // Wait for all backups to finish (if you're using current_backups)
     while (current_backups > 0) {
         wait(NULL);
         current_backups--;
     }
+
     kvs_terminate();
+    
+
+    freeQueue();
 
     return 0;
 }
