@@ -10,7 +10,7 @@
 #include "constants.h"
 
 
-// Variáveis globais para controlar backups
+// Global variables
 int max_backups = 0;
 int current_backups = 0;
 static struct HashTable* kvs_table = NULL;
@@ -22,6 +22,8 @@ static pthread_mutex_t kvs_table_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct timespec delay_to_timespec(unsigned int delay_ms) {
     return (struct timespec){delay_ms / 1000, (delay_ms % 1000) * 1000000};
 }
+
+
 
 int write_to_file(const char *output_file, char output[MAX_STRING_SIZE]){
     int fd = open(output_file, O_WRONLY | O_APPEND | O_CREAT, 0644);
@@ -123,7 +125,7 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], const char *output_
         write_to_file(output_file, read_output);
     }
 
-    printf("%s\n", read_output); 
+   
     free(read_output);
     return 0;
 }
@@ -197,10 +199,9 @@ void kvs_show(const char *output_file) {
 }
 
 void kvs_wait_backup() {
-    // Wait until all backups have finished
+    
     while (current_backups >= max_backups) {
-        printf(".\n");
-        wait(NULL);   // Wait for one backup to complete
+        wait(NULL);   
         current_backups--;
     }
 }
@@ -223,12 +224,12 @@ int kvs_backup(const char *output_file) {
     }
 
     if (pid == 0) {
-    // Child process
+    
     pthread_mutex_unlock(&kvs_table_mutex);
     kvs_show(output_file);
-    exit(0); // Use _exit instead of exit
+    exit(0); 
     }else {
-        // Parent process
+        
         current_backups++;
         pthread_mutex_unlock(&kvs_table_mutex);
     }
@@ -236,7 +237,15 @@ int kvs_backup(const char *output_file) {
     return 0;
 }
 
-void kvs_wait(unsigned int delay_ms) {
+void kvs_wait(unsigned int delay_ms, const char* output_file) {
+    
+    pthread_mutex_lock(&kvs_table_mutex);
     struct timespec delay = delay_to_timespec(delay_ms);
     nanosleep(&delay, NULL);
+    char output[MAX_STRING_SIZE] = "waited for "; 
+    char delay_str[20];
+    sprintf(delay_str, "%d ms", delay_ms); 
+    strcat(output, delay_str); 
+    write_to_file(output_file,output);
+    pthread_mutex_unlock(&kvs_table_mutex);
 }

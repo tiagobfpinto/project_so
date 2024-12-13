@@ -75,17 +75,18 @@ void freeQueue() {
     pthread_mutex_unlock(&queue_mutex);
 }
 
-void *thread_mission(void *arg) {
-    (void)arg; // unused
-    char *job = dequeue();
-    if (job == NULL) {
-        return NULL;
+void *thread_mission() {
+    while (1) {
+        char *job = dequeue();
+        if (job == NULL) { 
+            // Queue is empty; thread exits
+            break;
+        }
+        process_job_file(job);
+        free(job);
     }
-    process_job_file(job);
-    free(job);
     return NULL;
 }
-
 char **collect_jobs(size_t *file_count) {
     DIR *dir = opendir(DIRECTORY);
     if (!dir) {
@@ -308,8 +309,9 @@ void parse_job_file(const char *job_file,const char *output_file) {
                     fprintf(stderr, "Invalid WAIT command in file: %s\n", job_file);
                     continue;
                 }
+
                 printf("\nWaiting for %u ms.\n", delay);
-                kvs_wait(delay);
+                kvs_wait(delay, output_file);
                 break;
 
             case CMD_BACKUP:

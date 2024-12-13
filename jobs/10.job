@@ -4,5 +4,6 @@ READ [key1,key3,keyn,key,key3]
 BACKUP
 DELETE [key3,key1,chavequenaoexiste]
 BACKUP
+WAIT 1000
 WRITE [(CHAVEFINAL,C)]
 BACKUP

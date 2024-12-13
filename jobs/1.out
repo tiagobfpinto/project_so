@@ -1,7 +1,11 @@
 [(l,KVSERROR)(v,KVSERROR)(x,KVSERROR)(z,KVSERROR)]
-(b, berenice)
+(a, anna)
+(b, bernardo)
 (c, carlota)
 (d, dinis)
+(key3, valueright)
+(key1, valueright)
 [(c,KVSERROR)]
-(b, berenice)
+(a, anna)
+(b, bernardo)
 (d, dinis)
